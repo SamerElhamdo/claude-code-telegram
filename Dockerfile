@@ -8,6 +8,7 @@ RUN apk add --no-cache \
     python3 \
     py3-pip \
     ffmpeg \
+    gh \
     && npm install -g @anthropic-ai/claude-code@latest
 
 WORKDIR /app
