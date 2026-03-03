@@ -1,6 +1,6 @@
 FROM node:20-alpine AS base
 
-# Install system dependencies
+# Install system dependencies (+ gh from Alpine edge)
 RUN apk add --no-cache \
     git \
     bash \
@@ -8,7 +8,8 @@ RUN apk add --no-cache \
     python3 \
     py3-pip \
     ffmpeg \
-    gh \
+    && apk add --no-cache --repository https://dl-cdn.alpinelinux.org/alpine/edge/community \
+    github-cli \
     && npm install -g @anthropic-ai/claude-code@latest
 
 WORKDIR /app
