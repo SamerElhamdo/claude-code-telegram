@@ -1,0 +1,61 @@
+services:
+  claude-telegram:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      # ── Required ───────────────────────────────────────
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
+      - ALLOWED_USER_IDS=${ALLOWED_USER_IDS}
+
+      # ── Auth - choose only one method ─────────────────
+      # Method 1 (preferred): OAuth token from claude setup-token
+      - CLAUDE_CODE_OAUTH_TOKEN=${CLAUDE_CODE_OAUTH_TOKEN:-}
+      # Method 2 (alternative): API key from console.anthropic.com
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+
+      # ── Claude settings ────────────────────────────────
+      - CLAUDE_USE_BUNDLED_EXECUTABLE=true
+      - CLAUDE_SDK_LOG_LEVEL=basic
+      - DANGEROUS_MODE=${DANGEROUS_MODE:-false}
+
+      # ── Work directory ─────────────────────────────────
+      - WORKSPACE_DIR=/workspace
+
+      # ── Response settings ──────────────────────────────
+      - STREAMING_MODE=${STREAMING_MODE:-streaming}
+      - MAX_MESSAGE_LENGTH=4000
+      - TELEGRAPH_ENABLED=${TELEGRAPH_ENABLED:-false}
+
+      # ── Voice / TTS (optional) ─────────────────────────
+      - TRANSCRIBE_ENABLED=${TRANSCRIBE_ENABLED:-false}
+      - GROQ_API_KEY=${GROQ_API_KEY:-}
+      - VOICE_LANGUAGE=${VOICE_LANGUAGE:-ar}
+      - TTS_ENABLED=${TTS_ENABLED:-false}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+
+      # ── Node.js ────────────────────────────────────────
+      - NODE_ENV=production
+      - BOT_MODE=prod
+
+    volumes:
+      # Projects workspace - Claude Code runs here
+      - workspace:/workspace
+      # Sessions database (SQLite)
+      - data:/data
+      # Optional: mount a server directory directly
+      # - /home/user/projects:/workspace
+
+      # Method 3 for auth: mount ~/.claude from the server directly
+      # Enable this line instead of CLAUDE_CODE_OAUTH_TOKEN if you want
+      # - ${HOME}/.claude:/root/.claude:ro
+
+    # No ports needed because the bot uses polling
+    # No need for nginx or a reverse proxy
+
+volumes:
+  workspace:
+    driver: local
+  data:
+    driver: local
