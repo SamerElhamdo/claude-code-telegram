@@ -17,7 +17,7 @@ services:
       /bin/sh -c "echo 'model_list:
         - model_name: claude-opus-4-6
           litellm_params:
-            model: ollama/qwen3.5:cloud
+            model: ollama/qwen3-coder-next:cloud
             api_base: http://ollama:11434
         - model_name: claude-sonnet-4-5-20250929
           litellm_params:
