@@ -21,7 +21,7 @@ services:
             api_base: http://ollama:11434
         - model_name: claude-sonnet-4-5-20250929
           litellm_params:
-            model: ollama/qwen3-coder-next:cloud
+            model: ollama/minimax-m2.5:cloud
             api_base: http://ollama:11434' > /app/config.yaml && litellm --config /app/config.yaml --port 4000"
     depends_on:
       - ollama
