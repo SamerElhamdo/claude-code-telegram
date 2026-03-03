@@ -1,4 +1,32 @@
+version: '3.8'
+
 services:
+  ollama:
+    image: ollama/ollama:latest
+    container_name: ollama
+    volumes:
+      - ollama_data:/root/.ollama
+    restart: unless-stopped
+
+  litellm:
+    image: ghcr.io/berriai/litellm:main-latest
+    container_name: litellm
+    environment:
+      - LITELLM_MASTER_KEY=${LITELLM_MASTER_KEY:-sk-dummy-key}
+    entrypoint: >
+      /bin/sh -c "echo 'model_list:
+        - model_name: claude-3-7-sonnet-20250219
+          litellm_params:
+            model: ollama/اسم_النموذج_الخاص_بك
+            api_base: http://ollama:11434
+        - model_name: claude-3-5-sonnet-20241022
+          litellm_params:
+            model: ollama/اسم_النموذج_الخاص_بك
+            api_base: http://ollama:11434' > /app/config.yaml && litellm --config /app/config.yaml --port 4000"
+    depends_on:
+      - ollama
+    restart: unless-stopped
+
   claude-telegram:
     build:
       context: .
@@ -14,6 +42,8 @@ services:
       - CLAUDE_CODE_OAUTH_TOKEN=${CLAUDE_CODE_OAUTH_TOKEN:-}
       # Method 2 (alternative): API key from console.anthropic.com
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      # Route Anthropic-compatible calls through LiteLLM inside the Docker network
+      - ANTHROPIC_BASE_URL=http://litellm:4000
 
       # ── Claude settings ────────────────────────────────
       - CLAUDE_USE_BUNDLED_EXECUTABLE=true
@@ -39,6 +69,9 @@ services:
       - NODE_ENV=production
       - BOT_MODE=prod
 
+    depends_on:
+      - litellm
+
     volumes:
       # Projects workspace - Claude Code runs here
       - workspace:/workspace
@@ -58,4 +91,6 @@ volumes:
   workspace:
     driver: local
   data:
+    driver: local
+  ollama_data:
     driver: local
