@@ -15,13 +15,13 @@ services:
       - LITELLM_MASTER_KEY=${LITELLM_MASTER_KEY:-sk-dummy-key}
     entrypoint: >
       /bin/sh -c "echo 'model_list:
-        - model_name: claude-3-7-sonnet-20250219
+        - model_name: opus
           litellm_params:
-            model: ollama/اسم_النموذج_الخاص_بك
+            model: ollama/qwen3.5:397b-cloud
             api_base: http://ollama:11434
-        - model_name: claude-3-5-sonnet-20241022
+        - model_name: claude
           litellm_params:
-            model: ollama/اسم_النموذج_الخاص_بك
+            model: ollama/qwen3-coder-next:cloud
             api_base: http://ollama:11434' > /app/config.yaml && litellm --config /app/config.yaml --port 4000"
     depends_on:
       - ollama
