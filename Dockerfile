@@ -8,6 +8,8 @@ RUN apk add --no-cache \
     python3 \
     py3-pip \
     ffmpeg \
+    && apk add --no-cache --repository https://dl-cdn.alpinelinux.org/alpine/edge/community \
+    github-cli \
     && npm install -g @anthropic-ai/claude-code@latest
 
 WORKDIR /app
