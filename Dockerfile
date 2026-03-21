@@ -14,10 +14,12 @@ RUN apk add --no-cache \
 
 WORKDIR /app
 
+# كسر الكاش باستخدام الرابط العشوائي
 ADD "https://www.random.org/cgi-bin/randbyte?nbytes=10&format=h" skipcache
 
-# Clone claudegram
-RUN git clone https://github.com/mdnahidhossain-kk/claudegram.git .
+# الحل القسري: مسح المجلد ثم الكلون في سطر واحد لضمان النظافة
+RUN rm -rf ./* ./.* 2>/dev/null || true && \
+    git clone https://github.com/mdnahidhossain-kk/claudegram.git .
 
 # Install dependencies
 RUN npm install
@@ -28,7 +30,7 @@ RUN npm run build
 # Create workspace directory
 RUN mkdir -p /workspace /data
 
-# Configure Claude Code to use API key (non-interactive)
+# Configure Claude Code
 ENV CLAUDE_USE_BUNDLED_EXECUTABLE=true
 ENV NODE_ENV=production
 
