@@ -15,7 +15,7 @@ RUN apk add --no-cache \
 WORKDIR /app
 
 # Clone claudegram
-RUN git clone https://github.com/NachoSEO/claudegram.git .
+RUN git clone https://github.com/mdnahidhossain-kk/claudegram.git .
 
 # Install dependencies
 RUN npm install
