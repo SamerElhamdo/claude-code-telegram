@@ -1,6 +1,6 @@
 # Claude Code Telegram Bot – Dokploy Setup
 
-Telegram bot that lets you control **Claude Code** (Claude Code CLI) from your phone, deployed on **Dokploy**.
+Telegram bot that lets you control **Claude Code** (Claude Code CLI) from your phone, deployed on **Dokploy**. Based on [Claudegram](https://claudegram.com).
 
 ---
 
@@ -11,18 +11,26 @@ Telegram bot that lets you control **Claude Code** (Claude Code CLI) from your p
   - Chat with Claude about code or general questions.
   - Let Claude work inside a mounted project folder on the server.
   - Send images / PDFs or voice messages and get analysis.
+- **GitHub integration** — Persistent `gh` and `git` auth via `GH_TOKEN`; optional GitHub MCP for PRs, issues, and repo search.
+- **Multiple sessions in parallel** — Use Telegram groups with Forum Topics for independent sessions per topic.
 
 ---
 
-## 2. Project files
+## 2. Project structure
 
 ```
 .
-├── Dockerfile          # Builds the image (installs claude-code + claudegram)
+├── Dockerfile          # Builds the image (copies claudegram-main, installs gh, claude-code)
 ├── docker-compose.yml  # Defines the claude-telegram service
 ├── .env.example        # Environment variables template (copy to .env)
-└── README.md           # This guide
+├── README.md           # This guide
+└── claudegram-main/    # Claudegram source (bundled in this repo)
+    ├── src/
+    ├── package.json
+    └── ...
 ```
+
+The Dockerfile copies from the local `claudegram-main/` folder — no `git clone` at build time.
 
 ---
 
@@ -91,6 +99,7 @@ Only **one** of `CLAUDE_CODE_OAUTH_TOKEN` or `ANTHROPIC_API_KEY` should be set.
    - `DANGEROUS_MODE` – keep `false` for safety (recommended).
    - `TRANSCRIBE_ENABLED` + `GROQ_API_KEY` – to enable voice message transcription.
    - `TTS_ENABLED` + `OPENAI_API_KEY` – to let the bot reply with audio.
+   - `GH_TOKEN` + `GITHUB_MCP_ENABLED` – for persistent GitHub auth (gh, git, MCP).
 
 ### Environment variables reference
 
@@ -106,6 +115,9 @@ Only **one** of `CLAUDE_CODE_OAUTH_TOKEN` or `ANTHROPIC_API_KEY` should be set.
 | `TRANSCRIBE_ENABLED`  | No       | `true` to enable voice‑to‑text                         |
 | `TTS_ENABLED`         | No       | `true` to enable text‑to‑speech replies                |
 | `OPENAI_API_KEY`      | No       | Used when `TTS_ENABLED=true`                           |
+| `GH_TOKEN`            | No       | GitHub PAT – gh and git auth (persists across redeploys) |
+| `GITHUB_MCP_ENABLED`  | No       | `true` to enable GitHub MCP (PRs, issues, search)      |
+| `DOKPLOY_MCP_ENABLED` | No       | `true` + `DOKPLOY_URL` + `DOKPLOY_API_KEY` for Dokploy MCP |
 
 (\*) Exactly one of `ANTHROPIC_API_KEY` or `CLAUDE_CODE_OAUTH_TOKEN` must be provided.
 
@@ -167,10 +179,33 @@ Once the service is running and healthy:
 - Send `/project` → choose or change the active project folder.
 - Send an **image** or **PDF** → Claude will analyze its content.
 - Send a **voice message** (if `TRANSCRIBE_ENABLED=true`) → it is transcribed and answered.
+- `/plan`, `/explore`, `/loop` — different agent modes for complex tasks.
+- `/sessions`, `/resume`, `/continue` — manage and restore sessions.
+
+### Parallel sessions (Forum Topics)
+
+Use a Telegram **group with Forum Topics** enabled. Each topic = independent session. You can run different tasks in parallel (e.g. topic "frontend" and topic "backend" at the same time).
 
 ---
 
-## 9. Notes & security
+## 9. GitHub integration (optional)
+
+Set `GH_TOKEN` and optionally `GITHUB_MCP_ENABLED=true` to give Claude persistent GitHub access:
+
+- **gh** — Authenticated via `GH_TOKEN`; no `gh auth login` needed after each deploy.
+- **git** — Push/commit using the same token in remote URLs.
+- **GitHub MCP** — Create PRs, issues, search repos via MCP tools.
+
+Create a [Personal Access Token](https://github.com/settings/tokens) with scopes: `repo`, `read:org`, and optionally `workflow`. Add to `.env`:
+
+```env
+GH_TOKEN=ghp_xxxxxxxxxxxx
+GITHUB_MCP_ENABLED=true
+```
+
+---
+
+## 10. Notes & security
 
 - The bot uses **long polling** – no public IP or open port is required.
 - Volumes ensure data persists between restarts (sessions, workspace, etc.).
