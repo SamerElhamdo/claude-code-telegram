@@ -14,6 +14,8 @@ RUN apk add --no-cache \
 
 WORKDIR /app
 
+ADD "https://www.random.org/cgi-bin/randbyte?nbytes=10&format=h" skipcache
+
 # Clone claudegram
 RUN git clone https://github.com/mdnahidhossain-kk/claudegram.git .
 
