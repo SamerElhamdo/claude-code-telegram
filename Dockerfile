@@ -26,12 +26,16 @@ RUN npm install
 # Build TypeScript
 RUN npm run build
 
-# Create workspace directory
-RUN mkdir -p /workspace /data
+# Create workspace directory and set ownership
+RUN mkdir -p /workspace /data && \
+    chown -R node:node /app /workspace /data
 
 # Configure Claude Code
 ENV CLAUDE_USE_BUNDLED_EXECUTABLE=true
 ENV NODE_ENV=production
+
+# Switch to non-root user (required for --dangerously-skip-permissions)
+USER node
 
 # Healthcheck
 HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
