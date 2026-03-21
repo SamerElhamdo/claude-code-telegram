@@ -1,0 +1,308 @@
+import { Context } from 'grammy';
+import * as fs from 'fs';
+import * as path from 'path';
+import { config } from '../../config.js';
+import { sendToAgent } from '../../providers/provider-router.js';
+import { sessionManager } from '../../claude/session-manager.js';
+import { messageSender } from '../../telegram/message-sender.js';
+import { isDuplicate, markProcessed } from '../../telegram/deduplication.js';
+import { isStaleMessage } from '../middleware/stale-filter.js';
+import {
+  queueRequest,
+  isProcessing,
+  getQueuePosition,
+  setAbortController,
+} from '../../claude/request-queue.js';
+import { escapeMarkdownV2 as esc } from '../../telegram/markdown.js';
+import { getStreamingMode } from './command.handler.js';
+import { downloadFileSecure, getTelegramFileUrl } from '../../utils/download.js';
+import { sanitizeError } from '../../utils/sanitize.js';
+import { isValidImageFile, getFileType } from '../../utils/file-type.js';
+import { type PhotoSize } from 'grammy/types';
+import { getSessionKeyFromCtx } from '../../utils/session-key.js';
+
+const UPLOADS_DIR = '.claudegram/uploads';
+
+function sanitizeFileName(name: string): string {
+  return path.basename(name).replace(/[^a-zA-Z0-9._-]/g, '_');
+}
+
+function ensureUploadsDir(projectDir: string): string {
+  const dir = path.join(projectDir, UPLOADS_DIR);
+  fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
+  return dir;
+}
+
+function pickLargestPhoto(photoSizes: PhotoSize[]): PhotoSize {
+  return photoSizes.reduce((best, current) => {
+    const bestSize = best.file_size || 0;
+    const currentSize = current.file_size || 0;
+    return currentSize > bestSize ? current : best;
+  });
+}
+
+async function downloadTelegramFile(ctx: Context, fileId: string, destPath: string): Promise<string> {
+  const file = await ctx.api.getFile(fileId);
+  if (!file.file_path) {
+    throw new Error('Telegram did not provide file_path for this image.');
+  }
+
+  const fileUrl = getTelegramFileUrl(config.TELEGRAM_BOT_TOKEN, file.file_path);
+  await downloadFileSecure(fileUrl, destPath);
+
+  return file.file_path;
+}
+
+function getMediaType(filePath: string): string {
+  const ext = path.extname(filePath).toLowerCase();
+  const mimeTypes: Record<string, string> = {
+    '.jpg': 'image/jpeg',
+    '.jpeg': 'image/jpeg',
+    '.png': 'image/png',
+    '.gif': 'image/gif',
+    '.webp': 'image/webp',
+  };
+  return mimeTypes[ext] || 'image/jpeg';
+}
+
+async function handleSavedImage(
+  ctx: Context,
+  savedPath: string,
+  caption?: string
+): Promise<void> {
+  const keyInfo = getSessionKeyFromCtx(ctx);
+  if (!keyInfo) return;
+  const { sessionKey } = keyInfo;
+
+  const session = sessionManager.getSession(sessionKey);
+  if (!session) return;
+
+  const relativePath = path.relative(session.workingDirectory, savedPath);
+
+  const captionText = caption?.trim();
+  const noteLines = [
+    'User uploaded an image to the project.',
+    `Saved at: ${savedPath}`,
+    `Relative path: ${relativePath}`,
+    captionText ? `Caption: "${captionText}"` : 'Caption: (none)',
+    'The image is attached as a vision input — you can see it directly.',
+    'If the caption includes a question or request, answer it. Otherwise, describe what you see and ask if they want any analysis or edits.',
+  ];
+
+  const agentPrompt = noteLines.join('\n');
+
+  // Read image as base64 for multimodal vision input
+  const imageBase64 = fs.readFileSync(savedPath).toString('base64');
+  const mediaType = getMediaType(savedPath);
+  const images = [{ data: imageBase64, mediaType }];
+
+  if (isProcessing(sessionKey)) {
+    const position = getQueuePosition(sessionKey) + 1;
+    await ctx.reply(`⏳ Queued \(position ${position}\)`, { parse_mode: 'MarkdownV2' });
+  }
+
+  await queueRequest(sessionKey, agentPrompt, async () => {
+    if (getStreamingMode() === 'streaming') {
+      const startTime = Date.now();
+      await messageSender.startStreaming(ctx);
+
+      const abortController = new AbortController();
+      setAbortController(sessionKey, abortController);
+
+      try {
+        const response = await sendToAgent(sessionKey, agentPrompt, {
+          onProgress: (progressText) => {
+            messageSender.updateStream(ctx, progressText);
+          },
+          abortController,
+          images,
+          telegramCtx: ctx,
+        });
+
+        await messageSender.finishStreaming(ctx, response.text);
+        await messageSender.sendCompletionNotification(ctx, Date.now() - startTime);
+      } catch (error) {
+        await messageSender.cancelStreaming(ctx);
+        throw error;
+      }
+    } else {
+      await ctx.replyWithChatAction('typing');
+      const abortController = new AbortController();
+      setAbortController(sessionKey, abortController);
+
+      const response = await sendToAgent(sessionKey, agentPrompt, {
+        abortController,
+        images,
+        telegramCtx: ctx,
+      });
+      await messageSender.sendMessage(ctx, response.text);
+    }
+  });
+}
+
+export async function handlePhoto(ctx: Context): Promise<void> {
+  const keyInfo = getSessionKeyFromCtx(ctx);
+  const messageId = ctx.message?.message_id;
+  const messageDate = ctx.message?.date;
+  const photos = ctx.message?.photo;
+
+  if (!keyInfo || !messageId || !messageDate || !photos || photos.length === 0) return;
+  const { sessionKey } = keyInfo;
+
+  if (isStaleMessage(messageDate)) {
+    console.log(`[Photo] Ignoring stale photo message ${messageId}`);
+    return;
+  }
+  if (isDuplicate(messageId)) {
+    console.log(`[Photo] Ignoring duplicate photo message ${messageId}`);
+    return;
+  }
+  markProcessed(messageId);
+
+  const session = sessionManager.getSession(sessionKey);
+  if (!session) {
+    await ctx.reply(
+      '⚠️ No project set\\.\n\nIf the bot restarted, use `/continue` or `/resume` to restore your last session\\.\nOr use `/project` to open a project first\\.',
+      { parse_mode: 'MarkdownV2' }
+    );
+    return;
+  }
+
+  const largest = pickLargestPhoto(photos);
+  const fileSizeBytes = largest.file_size || 0;
+  const fileSizeMB = fileSizeBytes / (1024 * 1024);
+
+  if (fileSizeMB > config.IMAGE_MAX_FILE_SIZE_MB) {
+    await ctx.reply(
+      `❌ Image too large \(${esc(fileSizeMB.toFixed(1))}MB\)\.
+\nPlease send images under ${esc(String(config.IMAGE_MAX_FILE_SIZE_MB))}MB\.`,
+      { parse_mode: 'MarkdownV2' }
+    );
+    return;
+  }
+
+  const uploadsDir = ensureUploadsDir(session.workingDirectory);
+  const timestamp = Date.now();
+  const safeUniqueId = sanitizeFileName(largest.file_unique_id);
+  const fallbackName = `photo_${timestamp}_${safeUniqueId}.jpg`;
+  const destPath = path.join(uploadsDir, fallbackName);
+
+  try {
+    const filePath = await downloadTelegramFile(ctx, largest.file_id, destPath);
+
+    // Validate file content via magic bytes (defense against spoofed MIME types)
+    let isValid = false;
+    try {
+      isValid = isValidImageFile(destPath);
+    } catch {
+      // Validation threw — treat as invalid
+    }
+    if (!isValid) {
+      if (fs.existsSync(destPath)) fs.unlinkSync(destPath);
+      throw new Error('Downloaded file is not a valid image.');
+    }
+
+    // Get actual file type from magic bytes instead of trusting extension
+    const actualType = getFileType(destPath);
+    const rawExt = actualType?.extension || path.extname(filePath) || '.jpg';
+    const ext = rawExt.startsWith('.') ? rawExt : `.${rawExt}`;
+    const finalPath = ext && ext !== '.jpg'
+      ? destPath.replace(/\.jpg$/, ext)
+      : destPath;
+
+    if (finalPath !== destPath) {
+      fs.renameSync(destPath, finalPath);
+    }
+
+    const buffer = fs.readFileSync(finalPath);
+    if (!buffer.length) {
+      throw new Error('Downloaded image is empty.');
+    }
+
+    await handleSavedImage(ctx, finalPath, ctx.message?.caption);
+  } catch (error) {
+    const errorMessage = sanitizeError(error);
+    console.error('[Photo] Error:', errorMessage);
+    await ctx.reply(`❌ Image error: ${esc(errorMessage)}`, { parse_mode: 'MarkdownV2' });
+  }
+}
+
+export async function handleImageDocument(ctx: Context): Promise<void> {
+  const keyInfo = getSessionKeyFromCtx(ctx);
+  const messageId = ctx.message?.message_id;
+  const messageDate = ctx.message?.date;
+  const document = ctx.message?.document;
+
+  if (!keyInfo || !messageId || !messageDate || !document) return;
+  const { sessionKey } = keyInfo;
+
+  // Only handle image documents
+  if (!document.mime_type || !document.mime_type.startsWith('image/')) {
+    return;
+  }
+
+  if (isStaleMessage(messageDate)) {
+    console.log(`[ImageDoc] Ignoring stale document ${messageId}`);
+    return;
+  }
+  if (isDuplicate(messageId)) {
+    console.log(`[ImageDoc] Ignoring duplicate document ${messageId}`);
+    return;
+  }
+  markProcessed(messageId);
+
+  const session = sessionManager.getSession(sessionKey);
+  if (!session) {
+    await ctx.reply(
+      '⚠️ No project set\\.\n\nIf the bot restarted, use `/continue` or `/resume` to restore your last session\\.\nOr use `/project` to open a project first\\.',
+      { parse_mode: 'MarkdownV2' }
+    );
+    return;
+  }
+
+  const fileSizeBytes = document.file_size || 0;
+  const fileSizeMB = fileSizeBytes / (1024 * 1024);
+
+  if (fileSizeMB > config.IMAGE_MAX_FILE_SIZE_MB) {
+    await ctx.reply(
+      `❌ Image too large \(${esc(fileSizeMB.toFixed(1))}MB\)\.
+\nPlease send images under ${esc(String(config.IMAGE_MAX_FILE_SIZE_MB))}MB\.`,
+      { parse_mode: 'MarkdownV2' }
+    );
+    return;
+  }
+
+  const uploadsDir = ensureUploadsDir(session.workingDirectory);
+  const timestamp = Date.now();
+  const originalName = document.file_name ? sanitizeFileName(document.file_name) : '';
+  const ext = originalName.includes('.') ? '' : '.jpg';
+  const baseName = originalName || `image_${timestamp}_${document.file_unique_id}${ext}`;
+  const destPath = path.join(uploadsDir, `${timestamp}_${baseName}`);
+
+  try {
+    await downloadTelegramFile(ctx, document.file_id, destPath);
+
+    // Validate file content via magic bytes (defense against spoofed MIME types)
+    let isValid = false;
+    try {
+      isValid = isValidImageFile(destPath);
+    } catch {
+      // Validation threw — treat as invalid
+    }
+    if (!isValid) {
+      if (fs.existsSync(destPath)) fs.unlinkSync(destPath);
+      throw new Error('Downloaded file is not a valid image.');
+    }
+
+    const buffer = fs.readFileSync(destPath);
+    if (!buffer.length) {
+      throw new Error('Downloaded image is empty.');
+    }
+
+    await handleSavedImage(ctx, destPath, ctx.message?.caption);
+  } catch (error) {
+    const errorMessage = sanitizeError(error);
+    console.error('[ImageDoc] Error:', errorMessage);
+    await ctx.reply(`❌ Image error: ${esc(errorMessage)}`, { parse_mode: 'MarkdownV2' });
+  }
+}
