@@ -39,6 +39,16 @@ services:
       - NODE_ENV=production
       - BOT_MODE=prod
 
+
+      # ── Dokploy MCP (optional) ─────────────────────────
+      - DOKPLOY_MCP_ENABLED=${DOKPLOY_MCP_ENABLED:-false}
+      - DOKPLOY_URL=${DOKPLOY_URL:-}
+      - DOKPLOY_API_KEY=${DOKPLOY_API_KEY:-}
+      # ── Node.js ────────────────────────────────────────
+
+
+      
+
     volumes:
       # Projects workspace - Claude Code runs here
       - workspace:/workspace
