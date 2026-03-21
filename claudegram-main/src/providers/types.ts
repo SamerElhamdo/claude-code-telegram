@@ -1,4 +1,4 @@
-export type ProviderName = 'claude' | 'opencode';
+export type ProviderName = 'cursor';
 
 export interface AgentUsage {
   inputTokens: number;
@@ -33,7 +33,6 @@ export interface AgentOptions {
   abortController?: AbortController;
   command?: string;
   model?: string;
-  /** Telegram context passed through for MCP tools (Claude provider only) */
   telegramCtx?: unknown;
   /** Optional image attachments to send as multimodal vision input */
   images?: ImageAttachment[];

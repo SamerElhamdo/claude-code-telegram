@@ -1,4 +1,4 @@
-import type { Query } from '@anthropic-ai/claude-agent-sdk';
+/** Request queue — serializes messages per chat, supports cancel via AbortController. */
 
 type QueuedRequest<T> = {
   message: string;
@@ -8,12 +8,8 @@ type QueuedRequest<T> = {
 };
 
 const activeAbortControllers: Map<string, AbortController> = new Map();
-const activeQueries: Map<string, Query> = new Map();
 const pendingQueues: Map<string, Array<QueuedRequest<unknown>>> = new Map();
 const processingFlags: Map<string, boolean> = new Map();
-// Tracks chats where a cancel was initiated — checked by agent.ts to detect
-// user-initiated cancellation without calling controller.abort() (which crashes the SDK).
-const cancelledChats: Set<string> = new Set();
 
 export function getAbortController(sessionKey: string): AbortController | undefined {
   return activeAbortControllers.get(sessionKey);
@@ -25,22 +21,6 @@ export function setAbortController(sessionKey: string, controller: AbortControll
 
 export function clearAbortController(sessionKey: string): void {
   activeAbortControllers.delete(sessionKey);
-}
-
-export function setActiveQuery(sessionKey: string, q: Query): void {
-  activeQueries.set(sessionKey, q);
-}
-
-export function clearActiveQuery(sessionKey: string): void {
-  activeQueries.delete(sessionKey);
-}
-
-export function isCancelled(sessionKey: string): boolean {
-  return cancelledChats.has(sessionKey);
-}
-
-export function clearCancelled(sessionKey: string): void {
-  cancelledChats.delete(sessionKey);
 }
 
 export function isProcessing(sessionKey: string): boolean {
@@ -97,8 +77,6 @@ async function processQueue(sessionKey: string): Promise<void> {
   } finally {
     processingFlags.set(sessionKey, false);
     clearAbortController(sessionKey);
-    clearActiveQuery(sessionKey);
-    clearCancelled(sessionKey);
 
     if (queue.length > 0) {
       processQueue(sessionKey);
@@ -106,63 +84,20 @@ async function processQueue(sessionKey: string): Promise<void> {
   }
 }
 
-/** Soft cancel: interrupt the running query but keep the session alive. */
+/** Cancel the running query via AbortController. */
 export async function cancelRequest(sessionKey: string): Promise<boolean> {
-  const q = activeQueries.get(sessionKey);
-
-  if (q) {
-    // Set the cancelled flag BEFORE interrupt so agent.ts can detect it
-    // when the error_during_execution result arrives.
-    // Do NOT call controller.abort() — that crashes the SDK subprocess.
-    cancelledChats.add(sessionKey);
-    try {
-      await q.interrupt();
-    } catch (err) {
-      console.debug('[cancelRequest] interrupt() threw for chat', sessionKey, err);
-    }
-    clearActiveQuery(sessionKey);
-    return true;
-  }
-
-  // Fallback to AbortController if no query stored
   const controller = activeAbortControllers.get(sessionKey);
   if (controller) {
-    cancelledChats.add(sessionKey);
     controller.abort();
     clearAbortController(sessionKey);
     return true;
   }
-
   return false;
 }
 
-/** Soft reset: interrupt query + signal abort to fully tear down the session. */
+/** Reset: abort controller to fully tear down. */
 export async function resetRequest(sessionKey: string): Promise<boolean> {
-  const q = activeQueries.get(sessionKey);
-  const controller = activeAbortControllers.get(sessionKey);
-
-  if (q) {
-    cancelledChats.add(sessionKey);
-    try {
-      await q.interrupt();
-    } catch (err) {
-      console.debug('[resetRequest] interrupt() threw for chat', sessionKey, err);
-    }
-    // Also abort controller to fully tear down
-    if (controller) controller.abort();
-    clearActiveQuery(sessionKey);
-    clearAbortController(sessionKey);
-    return true;
-  }
-
-  if (controller) {
-    cancelledChats.add(sessionKey);
-    controller.abort();
-    clearAbortController(sessionKey);
-    return true;
-  }
-
-  return false;
+  return cancelRequest(sessionKey);
 }
 
 export function clearQueue(sessionKey: string): number {

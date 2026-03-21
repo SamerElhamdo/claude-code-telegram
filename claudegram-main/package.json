@@ -1,7 +1,7 @@
 {
   "name": "claudegram",
   "version": "1.0.0",
-  "description": "Telegram bot that bridges messages to Claude Code with full agent capabilities",
+  "description": "Telegram bot that bridges messages to Cursor CLI with full agent capabilities",
   "type": "module",
   "main": "dist/index.js",
   "scripts": {
@@ -12,7 +12,7 @@
   },
   "keywords": [
     "telegram",
-    "claude",
+    "cursor",
     "bot",
     "ai",
     "agent"
@@ -23,10 +23,8 @@
     "node": ">=20"
   },
   "dependencies": {
-    "@anthropic-ai/claude-agent-sdk": "^0.2.44",
     "@grammyjs/auto-retry": "^2.0.2",
     "@grammyjs/runner": "^2.0.3",
-    "@opencode-ai/sdk": "^1.1.53",
     "@types/turndown": "^5.0.6",
     "cheerio": "^1.2.0",
     "dotenv": "^16.4.7",

@@ -254,7 +254,7 @@ export async function handleMessage(ctx: Context): Promise<void> {
     return;
   }
 
-  // Skip if this is a Claude command (handled by command handler)
+  // Skip if this is an agent command (handled by command handler)
   if (isClaudeCommand(text)) {
     return;
   }
@@ -345,7 +345,7 @@ async function handleProjectReply(ctx: Context, sessionKey: string, projectPath:
 
   const projectName = path.basename(resolvedPath);
   await ctx.reply(
-    `✅ Project set: *${esc(projectName)}*\n\n\`${esc(resolvedPath)}\`\n\nYou can now chat with Claude about this project\\!${projectStatusSuffix(sessionKey)}`,
+    `✅ Project set: *${esc(projectName)}*\n\n\`${esc(resolvedPath)}\`\n\nYou can now chat with Cursor about this project\\!${projectStatusSuffix(sessionKey)}`,
     { parse_mode: 'MarkdownV2' }
   );
 

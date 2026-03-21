@@ -6,8 +6,8 @@ export interface ParsedCommand {
   model: string | null;
 }
 
-const CLAUDE_COMMANDS = ['plan', 'explore', 'model', 'commands', 'loop', 'resume', 'continue', 'sessions', 'provider'] as const;
-type ClaudeCommand = (typeof CLAUDE_COMMANDS)[number];
+const AGENT_COMMANDS = ['plan', 'explore', 'model', 'commands', 'loop', 'resume', 'continue', 'sessions'] as const;
+type AgentCommand = (typeof AGENT_COMMANDS)[number];
 
 export function parseClaudeCommand(message: string): ParsedCommand {
   const trimmed = message.trim();
@@ -21,8 +21,7 @@ export function parseClaudeCommand(message: string): ParsedCommand {
   const commandPart = firstSpace === -1 ? trimmed.slice(1) : trimmed.slice(1, firstSpace);
   const args = firstSpace === -1 ? '' : trimmed.slice(firstSpace + 1).trim();
 
-  // Check if it's a Claude command
-  if (CLAUDE_COMMANDS.includes(commandPart as ClaudeCommand)) {
+  if (AGENT_COMMANDS.includes(commandPart as AgentCommand)) {
     return { command: commandPart, args, model: null };
   }
 
@@ -37,20 +36,19 @@ export function isClaudeCommand(message: string): boolean {
   const firstSpace = trimmed.indexOf(' ');
   const commandPart = firstSpace === -1 ? trimmed.slice(1) : trimmed.slice(1, firstSpace);
 
-  return CLAUDE_COMMANDS.includes(commandPart as ClaudeCommand);
+  return AGENT_COMMANDS.includes(commandPart as AgentCommand);
 }
 
 // Returns MarkdownV2 escaped command list
 export function getAvailableCommands(): string {
   const sections: Array<{ title: string; commands: string[] }> = [
     {
-      title: 'Claude Commands',
+      title: 'Cursor Commands',
       commands: [
         '• `/plan <task>` \\- Enter plan mode for complex tasks',
         '• `/explore <question>` \\- Use explore agent for codebase questions',
         '• `/loop <task>` \\- Run iteratively until task complete',
         '• `/model \\[name\\]` \\- Show or set AI model',
-        ...(config.OPENCODE_ENABLED ? ['• `/provider` \\- Switch AI provider \\(Claude / OpenCode\\)'] : []),
         '• `/commands` \\- Show this list',
       ],
     },
@@ -62,7 +60,6 @@ export function getAvailableCommands(): string {
         '• `/resume` \\- Pick from recent sessions to resume',
         '• `/continue` \\- Resume most recent session',
         '• `/sessions` \\- List all sessions',
-        '• `/teleport` \\- Move session to terminal \\(forked\\)',
         '• `/clear` \\- Clear session and start fresh',
         '• `/status` \\- Show current session info',
       ],
@@ -109,7 +106,7 @@ export function getAvailableCommands(): string {
     title: 'Bot Commands',
     commands: [
       '• `/tts` \\- Toggle voice replies',
-      '• `/context` \\- Show Claude context usage',
+      '• `/context` \\- Show context usage',
       '• `/botstatus` \\- Show bot process status',
       '• `/restartbot` \\- Restart the bot process',
       '• `/ping` \\- Check if bot is responsive',

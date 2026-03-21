@@ -3,7 +3,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { config } from '../../config.js';
-import { sendToAgent } from '../../claude/agent.js';
+import { sendToAgent } from '../../providers/provider-router.js';
 import { sessionManager } from '../../claude/session-manager.js';
 import { messageSender } from '../../telegram/message-sender.js';
 import { isDuplicate, markProcessed } from '../../telegram/deduplication.js';

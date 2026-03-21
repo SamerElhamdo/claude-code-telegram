@@ -52,7 +52,7 @@ export class MessageSender {
     const keyInfo = getSessionKeyFromCtx(ctx);
     // Check if we should use Telegraph for this content
     if (shouldUseTelegraph(text, keyInfo?.sessionKey)) {
-      const pageUrl = await createTelegraphPage('Claude Response', text);
+      const pageUrl = await createTelegraphPage('Response', text);
 
       if (pageUrl) {
         // Send Telegraph link with a brief summary
@@ -389,7 +389,7 @@ export class MessageSender {
       if (state.messageId) {
         // Check if we should use Telegraph for final content
         if (shouldUseTelegraph(finalContent, sessionKey)) {
-          const pageUrl = await createTelegraphPage('Claude Response', finalContent);
+          const pageUrl = await createTelegraphPage('Response', finalContent);
 
           if (pageUrl) {
             try {

@@ -28,8 +28,6 @@ import {
   handleCommands,
   handleModelCommand,
   handleModelCallback,
-  handleProviderCommand,
-  handleProviderCallback,
   handlePlan,
   handleExplore,
   handleResume,
@@ -37,7 +35,6 @@ import {
   handleContinue,
   handleLoop,
   handleSessions,
-  handleTeleport,
   handleFile,
   handleReddit,
   handleVReddit,
@@ -115,12 +112,11 @@ export async function createBot(): Promise<Bot> {
     { command: 'continue', description: '▶️ Continue last session' },
     { command: 'botstatus', description: '🩺 Show bot process status' },
     { command: 'restartbot', description: '🔁 Restart the bot' },
-    { command: 'context', description: '🧠 Show Claude context usage' },
+    { command: 'context', description: '🧠 Show context usage' },
     { command: 'plan', description: '📋 Start planning mode' },
     { command: 'explore', description: '🔍 Explore codebase' },
     { command: 'loop', description: '🔄 Run in loop mode' },
     { command: 'sessions', description: '📚 View saved sessions' },
-    { command: 'teleport', description: '🚀 Move session to terminal' },
     ...(config.REDDIT_ENABLED ? [{ command: 'reddit', description: '📡 Fetch Reddit posts & subreddits' }] : []),
     ...(config.VREDDIT_ENABLED ? [{ command: 'vreddit', description: '🎬 Download Reddit video from post URL' }] : []),
     ...(config.MEDIUM_ENABLED ? [{ command: 'medium', description: '📰 Fetch Medium articles' }] : []),
@@ -129,7 +125,6 @@ export async function createBot(): Promise<Bot> {
     { command: 'file', description: '📎 Download a file from project' },
     { command: 'telegraph', description: '📄 View markdown with Instant View' },
     { command: 'model', description: '🤖 Switch AI model' },
-    ...(config.OPENCODE_ENABLED ? [{ command: 'provider', description: '🔌 Switch AI provider' }] : []),
     { command: 'mode', description: '⚙️ Toggle streaming mode' },
     { command: 'terminalui', description: '🖥️ Toggle terminal-style display' },
     { command: 'tts', description: '🔊 Toggle voice replies' },
@@ -171,9 +166,6 @@ export async function createBot(): Promise<Bot> {
 
   bot.command('commands', handleCommands);
   bot.command('model', handleModelCommand);
-  if (config.OPENCODE_ENABLED) {
-    bot.command('provider', handleProviderCommand);
-  }
   bot.command('plan', handlePlan);
   bot.command('explore', handleExplore);
 
@@ -184,9 +176,6 @@ export async function createBot(): Promise<Bot> {
 
   // Loop mode
   bot.command('loop', handleLoop);
-
-  // Teleport to terminal
-  bot.command('teleport', handleTeleport);
 
   // File commands
   bot.command('file', handleFile);
@@ -219,8 +208,6 @@ export async function createBot(): Promise<Bot> {
 
     if (data.startsWith('resume:')) {
       await handleResumeCallback(ctx);
-    } else if (data.startsWith('provider:')) {
-      await handleProviderCallback(ctx);
     } else if (data.startsWith('model:')) {
       await handleModelCallback(ctx);
     } else if (data.startsWith('mode:')) {

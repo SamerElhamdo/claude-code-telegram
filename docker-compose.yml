@@ -1,5 +1,5 @@
 services:
-  claude-telegram:
+  cursogram:
     build:
       context: .
       dockerfile: Dockerfile
@@ -9,19 +9,12 @@ services:
       - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
       - ALLOWED_USER_IDS=${ALLOWED_USER_IDS}
 
-      # ── Auth - choose only one method ─────────────────
-      # Method 1 (preferred): OAuth token from claude setup-token
-      - CLAUDE_CODE_OAUTH_TOKEN=${CLAUDE_CODE_OAUTH_TOKEN:-}
-      # Method 2 (alternative): API key from console.anthropic.com
-      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
-
-      # ── Claude settings ────────────────────────────────
-      - CLAUDE_USE_BUNDLED_EXECUTABLE=true
-      - CLAUDE_SDK_LOG_LEVEL=basic
+      # ── Cursor CLI ─────────────────────────────────────
+      - CURSOR_API_KEY=${CURSOR_API_KEY:-}
       - DANGEROUS_MODE=${DANGEROUS_MODE:-false}
 
-      # ── Work directory ─────────────────────────────────
-      - WORKSPACE_DIR=/workspace
+      # ── Work directory (Cursogram paths — avoids Cursor conflicts) ─
+      - WORKSPACE_DIR=/cursogram/workspace
 
       # ── Response settings ──────────────────────────────
       - STREAMING_MODE=${STREAMING_MODE:-streaming}
@@ -51,26 +44,25 @@ services:
       - GIT_TERMINAL_PROMPT=0
       - GITHUB_MCP_ENABLED=${GITHUB_MCP_ENABLED:-false}
 
+      # ── Cursor CLI (full path in Docker for reliability) ─
+      - CURSOR_CLI_PATH=/home/node/.local/bin/agent
+
 
       
 
     volumes:
-      # Projects workspace - Claude Code runs here
-      - workspace:/workspace
-      # Sessions database (SQLite)
-      - data:/data
-      # Optional: mount a server directory directly
-      # - /home/user/projects:/workspace
-
-      # Method 3 for auth: mount ~/.claude from the server directly
-      # Enable this line instead of CLAUDE_CODE_OAUTH_TOKEN if you want
-      # - ${HOME}/.claude:/root/.claude:ro
+      # Projects workspace (distinct path to avoid Cursor conflicts)
+      - cursogram_workspace:/cursogram/workspace
+      # Bot data: sessions, preferences (~/.claudegram)
+      - cursogram_data:/home/node/.claudegram
+      # Optional: mount server directory
+      # - /home/user/projects:/cursogram/workspace
 
     # No ports needed because the bot uses polling
     # No need for nginx or a reverse proxy
 
 volumes:
-  workspace:
+  cursogram_workspace:
     driver: local
-  data:
+  cursogram_data:
     driver: local

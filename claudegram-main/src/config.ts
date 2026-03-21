@@ -20,25 +20,9 @@ const envSchema = z.object({
     .string()
     .default('')
     .transform((val) => val ? val.split(',').map((id) => parseInt(id.trim(), 10)) : []),
-  ANTHROPIC_API_KEY: z.string().optional(), // Optional - uses Claude Max subscription if not set
-  // OpenAI (TTS)
   OPENAI_API_KEY: z.string().optional(),
   WORKSPACE_DIR: z.string().default(process.env.HOME || '.'),
-  CLAUDE_EXECUTABLE_PATH: z.string().default('claude'),
-  CLAUDE_USE_BUNDLED_EXECUTABLE: z
-    .string()
-    .default('true')
-    .transform((val) => val.toLowerCase() === 'true'),
-  CLAUDE_SDK_LOG_LEVEL: z.enum(['off', 'basic', 'verbose', 'trace']).default('basic'),
-  CLAUDE_SDK_INCLUDE_PARTIAL: z
-    .string()
-    .default('false')
-    .transform((val) => val.toLowerCase() === 'true'),
-  CLAUDE_REASONING_SUMMARY: z
-    .string()
-    .default('true')
-    .transform((val) => val.toLowerCase() === 'true'),
-  BOT_NAME: z.string().default('Claudegram'),
+  BOT_NAME: z.string().default('Cursogram'),
   BOT_MODE: z.enum(['dev', 'prod']).default('dev'),
   STREAMING_MODE: z.enum(['streaming', 'wait']).default('streaming'),
   STREAMING_DEBOUNCE_MS: z
@@ -207,16 +191,6 @@ const envSchema = z.object({
     .string()
     .default('60')
     .transform((val) => parseInt(val, 10)),
-  // OpenCode provider integration
-  OPENCODE_ENABLED: z
-    .string()
-    .default('false')
-    .transform((val) => val.toLowerCase() === 'true'),
-  OPENCODE_BASE_URL: z.string().optional(),
-  OPENCODE_PORT: z
-    .string()
-    .default('4096')
-    .transform((val) => parseInt(val, 10)),
   // Dokploy MCP server (stdio via npx)
   DOKPLOY_MCP_ENABLED: z.string().default('false').transform(toBool),
   DOKPLOY_URL: z.string().optional(),
@@ -224,6 +198,9 @@ const envSchema = z.object({
   // GitHub (gh + MCP) - dedicated org account
   GITHUB_MCP_ENABLED: z.string().default('false').transform(toBool),
   GITHUB_TOKEN: z.string().optional(),
+  // Cursor CLI
+  CURSOR_CLI_PATH: z.string().default('agent'),
+  CURSOR_API_KEY: z.string().optional(),
 }).superRefine((data, ctx) => {
   if (data.DOKPLOY_MCP_ENABLED) {
     if (!data.DOKPLOY_URL) {

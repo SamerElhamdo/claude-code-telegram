@@ -9,11 +9,8 @@ import {
   isDangerousMode,
   getCachedUsage,
   getActiveProviderName,
-  setActiveProvider,
-  getAvailableProviders,
   getAvailableModels,
   clearModel,
-  type ProviderName,
   type ModelInfo,
 } from '../../providers/provider-router.js';
 import { config } from '../../config.js';
@@ -53,7 +50,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { fileURLToPath } from 'url';
-import { execFile, spawn } from 'child_process';
+import { spawn } from 'child_process';
 import { sanitizeError, sanitizePath } from '../../utils/sanitize.js';
 import { getWorkspaceRoot, isPathWithinRoot } from '../../utils/workspace-guard.js';
 import { getSessionKeyFromCtx, parseSessionKey } from '../../utils/session-key.js';
@@ -75,7 +72,7 @@ async function replyFeatureDisabled(ctx: Context, feature: string): Promise<void
 export function projectStatusSuffix(sessionKey: string): string {
   const { chatId } = parseSessionKey(sessionKey);
   const model = getModel(chatId);
-  const provider = getActiveProviderName(chatId);
+  const provider = getActiveProviderName();
   const dangerous = isDangerousMode() ? '⚠️ ENABLED' : 'Disabled';
   const session = sessionManager.getSession(sessionKey);
   const created = session?.createdAt
@@ -95,7 +92,8 @@ export function projectStatusSuffix(sessionKey: string): string {
 
 /** The copyable command sent as a separate message. */
 export function resumeCommandMessage(sessionId: string): string {
-  return `\`claude --resume ${sessionId}\``;
+  const cliPath = config.CURSOR_CLI_PATH || 'agent';
+  return `\`${cliPath} --resume ${sessionId}\``;
 }
 
 const OPENAI_TTS_VOICES = [
@@ -130,102 +128,6 @@ function botctlExists(): boolean {
 }
 
 type TTSMenuMode = 'main' | 'voices';
-
-function parseContextOutput(raw: string): string {
-  const trimmed = raw.trim();
-  if (!trimmed) {
-    return '⚠️ No context output received.';
-  }
-
-  const lines = trimmed
-    .split('\n')
-    .map((line) => line.trim())
-    .filter((line) => line.length > 0);
-
-  let model = '';
-  let tokensLine = '';
-  const categories: Array<{ name: string; tokens: string; percent: string }> = [];
-  let inCategories = false;
-
-  for (const line of lines) {
-    if (/^model:/i.test(line)) {
-      model = line.replace(/^model:/i, '').trim();
-      continue;
-    }
-    if (/^tokens:/i.test(line)) {
-      tokensLine = line.replace(/^tokens:/i, '').trim();
-      continue;
-    }
-    if (/estimated usage by category/i.test(line)) {
-      inCategories = true;
-      continue;
-    }
-    if (inCategories) {
-      if (/^category/i.test(line)) continue;
-      if (/^-+$/.test(line)) continue;
-
-      const match = line.match(/^(.+?)\s{2,}([0-9.,kKmM]+)\s+([0-9.,]+%)$/);
-      if (match) {
-        categories.push({ name: match[1].trim(), tokens: match[2], percent: match[3] });
-        continue;
-      }
-
-      const parts = line.split(/\s+/);
-      if (parts.length >= 3 && parts[parts.length - 1].endsWith('%')) {
-        const percent = parts.pop() as string;
-        const tokens = parts.pop() as string;
-        const name = parts.join(' ');
-        categories.push({ name, tokens, percent });
-      }
-    }
-  }
-
-  if (!model && !tokensLine && categories.length === 0) {
-    return `## 🧠 Context Usage\n\n\`\`\`\n${trimmed}\n\`\`\``;
-  }
-
-  let output = '## 🧠 Context Usage';
-  if (model) output += `\n- **Model:** ${model}`;
-  if (tokensLine) output += `\n- **Tokens:** ${tokensLine}`;
-
-  if (categories.length > 0) {
-    output += '\n\n### Estimated usage by category';
-    for (const category of categories) {
-      output += `\n- **${category.name}:** ${category.tokens} (${category.percent})`;
-    }
-  }
-
-  output += '\n\n_If this looks stale, send a new message then run /context again._';
-  return output;
-}
-
-const SESSION_ID_RE = /^[a-zA-Z0-9_-]{8,128}$/;
-
-async function runClaudeContext(sessionId: string, cwd: string): Promise<string> {
-  if (!SESSION_ID_RE.test(sessionId)) {
-    throw new Error('Invalid session ID format');
-  }
-  return new Promise((resolve, reject) => {
-    execFile(
-      config.CLAUDE_EXECUTABLE_PATH,
-      ['-p', '--resume', sessionId, '/context'],
-      {
-        cwd,
-        timeout: 20_000,
-        maxBuffer: 1024 * 1024,
-        env: process.env,
-      },
-      (error, stdout, stderr) => {
-        if (error) {
-          const message = (stderr || error.message).trim();
-          reject(new Error(message || 'Failed to run /context'));
-          return;
-        }
-        resolve((stdout || stderr || '').trim());
-      }
-    );
-  });
-}
 
 function buildTTSMenu(sessionKey: string, mode: TTSMenuMode) {
   const settings = getTTSSettings(sessionKey);
@@ -326,17 +228,19 @@ function buildTelegraphMenu(sessionKey: string) {
 }
 
 export async function handleStart(ctx: Context): Promise<void> {
+  const chatId = ctx.chat?.id;
+  const aiLabel = 'Cursor AI';
   const dangerousWarning = isDangerousMode()
     ? '\n\n⚠️ *DANGEROUS MODE ENABLED* \\- All tool permissions auto\\-approved'
     : '';
 
   const welcomeMessage = `👋 *Welcome to Claudegram\\!*
 
-I bridge your messages to Claude Code running on your local machine\\.
+I bridge your messages to ${esc(aiLabel)} running on your machine\\.
 
 *Getting Started:*
 1\\. Set your project directory with \`/project /path/to/project\`
-2\\. Start chatting with Claude about your code\\!
+2\\. Start chatting with the AI about your code\\!
 
 *Commands:*
 • \`/project <path>\` \\- Open a project
@@ -421,7 +325,7 @@ export async function handleProjectCallback(ctx: Context): Promise<void> {
 
     await ctx.answerCallbackQuery({ text: 'Project set' });
     await ctx.editMessageText(
-      `✅ Project: *${esc(path.basename(state.current))}*\n\nYou can now chat with Claude about this project\\!${projectStatusSuffix(sessionKey)}`,
+      `✅ Project: *${esc(path.basename(state.current))}*\n\nYou can now chat with Cursor about this project\\!${projectStatusSuffix(sessionKey)}`,
       { parse_mode: 'MarkdownV2' }
     );
 
@@ -692,7 +596,7 @@ export async function handleProject(ctx: Context): Promise<void> {
   sessionManager.setWorkingDirectory(sessionKey, projectPath);
   clearConversation(sessionKey);
 
-  await replyMd(ctx, `✅ Project: *${esc(args)}*\n\nYou can now chat with Claude about this project\\!${projectStatusSuffix(sessionKey)}`);
+  await replyMd(ctx, `✅ Project: *${esc(args)}*\n\nYou can now chat with Cursor about this project\\!${projectStatusSuffix(sessionKey)}`);
 
   const s = sessionManager.getSession(sessionKey);
   if (s?.claudeSessionId) {
@@ -729,7 +633,7 @@ export async function handleNewProject(ctx: Context): Promise<void> {
   sessionManager.setWorkingDirectory(sessionKey, projectPath);
   clearConversation(sessionKey);
 
-  await replyMd(ctx, `✅ Created and opened: *${esc(args)}*\n\nYou can now chat with Claude about this project\\!${projectStatusSuffix(sessionKey)}`);
+  await replyMd(ctx, `✅ Created and opened: *${esc(args)}*\n\nYou can now chat with Cursor about this project\\!${projectStatusSuffix(sessionKey)}`);
 
   const s = sessionManager.getSession(sessionKey);
   if (s?.claudeSessionId) {
@@ -837,7 +741,7 @@ export async function handleStatus(ctx: Context): Promise<void> {
   }
 
   const currentModel = getModel(chatId);
-  const provider = getActiveProviderName(chatId);
+  const provider = getActiveProviderName();
   const dangerousMode = isDangerousMode() ? '⚠️ ENABLED' : 'Disabled';
 
   let status = `📊 *Session Status*
@@ -855,10 +759,17 @@ export async function handleStatus(ctx: Context): Promise<void> {
   const cached = getCachedUsage(sessionKey);
   if (cached) {
     const pct = cached.contextWindow > 0
-      ? Math.round(((cached.inputTokens + cached.outputTokens) / cached.contextWindow) * 100)
+      ? Math.round(((cached.inputTokens + cached.outputTokens + cached.cacheReadTokens) / cached.contextWindow) * 100)
       : 0;
-    status += `\n• *Context:* ${esc(String(pct))}% \\(${esc(fmtTokens(cached.inputTokens + cached.outputTokens))}/${esc(fmtTokens(cached.contextWindow))}\\)`;
-    status += `\n• *Session Cost:* \\$${esc(cached.totalCostUsd.toFixed(4))}`;
+    status += `\n• *Context:* ${esc(String(pct))}% \\(${esc(fmtTokens(cached.inputTokens + cached.outputTokens + cached.cacheReadTokens))}/${esc(fmtTokens(cached.contextWindow))}\\)`;
+    status += `\n• *Tokens:* In ${esc(fmtTokens(cached.inputTokens))} \\| Out ${esc(fmtTokens(cached.outputTokens))}`;
+    if (cached.cacheReadTokens > 0) {
+      status += ` \\| Cache ${esc(fmtTokens(cached.cacheReadTokens))}`;
+    }
+    status += `\n• *Session Cost:* \\$${esc(cached.totalCostUsd.toFixed(4))} USD`;
+    status += `\n• *Turns:* ${esc(String(cached.numTurns))}`;
+  } else if (provider === 'cursor') {
+    status += `\n• *Usage:* _Cursor CLI does not expose tokens\\. Check cursor\\.com/dashboard for billing\\._`;
   }
 
   await replyMd(ctx, status);
@@ -886,7 +797,7 @@ export async function handleMode(ctx: Context): Promise<void> {
   ];
 
   const description = runtimeStreamingMode === 'streaming'
-    ? '_Updates progressively as Claude types_'
+    ? '_Updates progressively as Cursor types_'
     : '_Shows complete response when done_';
 
   await ctx.reply(
@@ -906,7 +817,7 @@ export async function handleModeCallback(ctx: Context): Promise<void> {
   runtimeStreamingMode = newMode;
 
   const description = newMode === 'streaming'
-    ? '_Updates progressively as Claude types_'
+    ? '_Updates progressively as Cursor types_'
     : '_Shows complete response when done_';
 
   await ctx.answerCallbackQuery({ text: `Mode set to ${newMode}!` });
@@ -1114,38 +1025,7 @@ export async function handleContext(ctx: Context): Promise<void> {
     return;
   }
 
-  // Fallback: CLI shell-out approach (Claude only)
-  if (getActiveProviderName(chatId) === 'opencode') {
-    await replyMd(ctx, '⚠️ No usage data yet\\.\n\nSend a message first, then run `/context` again\\.');
-    return;
-  }
-  if (!session.claudeSessionId) {
-    await replyMd(
-      ctx,
-      '⚠️ No Claude session ID found\\.\n\nSend a message to Claude after resuming, then run `/context` again\\.'
-    );
-    return;
-  }
-
-  const ack = await ctx.reply('🧠 Checking context...', { parse_mode: undefined });
-
-  try {
-    const raw = await runClaudeContext(session.claudeSessionId, session.workingDirectory);
-    const formatted = parseContextOutput(raw);
-    await messageSender.sendMessage(ctx, formatted);
-  } catch (error) {
-    const message = error instanceof Error ? error.message : 'Unknown error';
-    const hint = message.toLowerCase().includes('unknown') || message.toLowerCase().includes('command')
-      ? '\n\nThis CLI may not support `/context` yet.'
-      : '';
-    await messageSender.sendMessage(ctx, `❌ Failed to fetch context: ${message}${hint}`);
-  } finally {
-    try {
-      await ctx.api.deleteMessage(chatId, ack.message_id);
-    } catch {
-      // ignore cleanup errors
-    }
-  }
+  await replyMd(ctx, '⚠️ No usage data yet\\.\n\nSend a message first, then run `/context` again\\.');
 }
 
 export async function handleBotStatus(ctx: Context): Promise<void> {
@@ -1318,7 +1198,7 @@ export async function handleModelCommand(ctx: Context): Promise<void> {
   const text = ctx.message?.text || '';
   const args = text.split(' ').slice(1).join(' ').trim().toLowerCase();
 
-  const providerName = getActiveProviderName(chatId);
+  const providerName = getActiveProviderName();
   const models = await getAvailableModels(chatId);
   const validIds = models.map(m => m.id);
 
@@ -1387,54 +1267,6 @@ export async function handleModelCallback(ctx: Context): Promise<void> {
   );
 }
 
-export async function handleProviderCommand(ctx: Context): Promise<void> {
-  const chatId = ctx.chat?.id;
-  if (!chatId) return;
-
-  const providers = getAvailableProviders();
-  const active = getActiveProviderName(chatId);
-
-  const keyboard = providers.map((p) => {
-    const label = p === active ? `✓ ${p}` : p;
-    return [{ text: label, callback_data: `provider:${p}` }];
-  });
-
-  await ctx.reply(
-    `🔌 *Select Provider*\n\n_Current: ${esc(active)}_\n\n• *claude* \\- Claude Code SDK \\(Anthropic\\)\n• *opencode* \\- OpenCode \\(75\\+ LLM providers\\)`,
-    {
-      parse_mode: 'MarkdownV2',
-      reply_markup: {
-        inline_keyboard: keyboard,
-      },
-    }
-  );
-}
-
-export async function handleProviderCallback(ctx: Context): Promise<void> {
-  const chatId = ctx.chat?.id;
-  if (!chatId) return;
-
-  const data = ctx.callbackQuery?.data;
-  if (!data || !data.startsWith('provider:')) return;
-
-  const provider = data.replace('provider:', '') as ProviderName;
-  const providers = getAvailableProviders();
-
-  if (!providers.includes(provider)) {
-    await ctx.answerCallbackQuery({ text: 'Invalid provider' });
-    return;
-  }
-
-  await setActiveProvider(chatId, provider);
-  clearModel(chatId); // Models differ between providers
-
-  await ctx.answerCallbackQuery({ text: `Switched to ${provider}!` });
-  await ctx.editMessageText(
-    `✅ Provider set to *${esc(provider)}*\n\n_Model selection cleared \\— use /model to pick a model\\._`,
-    { parse_mode: 'MarkdownV2' }
-  );
-}
-
 export async function handlePlan(ctx: Context): Promise<void> {
   const keyInfo = getSessionKeyFromCtx(ctx);
   if (!keyInfo) return;
@@ -1451,7 +1283,7 @@ export async function handlePlan(ctx: Context): Promise<void> {
 
   if (!task) {
     await ctx.reply(
-      `📋 *Plan Mode*\n\n_Project: ${esc(path.basename(session.workingDirectory))}_\n\nClaude will analyze your task and create a detailed implementation plan before coding\\.\n\n👇 _Describe your task:_`,
+      `📋 *Plan Mode*\n\n_Project: ${esc(path.basename(session.workingDirectory))}_\n\nCursor will analyze your task and create a detailed implementation plan before coding\\.\n\n👇 _Describe your task:_`,
       {
         parse_mode: 'MarkdownV2',
         reply_markup: {
@@ -1510,7 +1342,7 @@ export async function handleExplore(ctx: Context): Promise<void> {
 
   if (!question) {
     await ctx.reply(
-      `🔍 *Explore Mode*\n\n_Project: ${esc(path.basename(session.workingDirectory))}_\n\nClaude will search and analyze the codebase to answer your question\\.\n\n👇 _What would you like to know?_`,
+      `🔍 *Explore Mode*\n\n_Project: ${esc(path.basename(session.workingDirectory))}_\n\nCursor will search and analyze the codebase to answer your question\\.\n\n👇 _What would you like to know?_`,
       {
         parse_mode: 'MarkdownV2',
         reply_markup: {
@@ -1563,7 +1395,7 @@ export async function handleResume(ctx: Context): Promise<void> {
   const resumable = history.filter((entry) => entry.claudeSessionId);
 
   if (resumable.length === 0) {
-    await replyMd(ctx, 'ℹ️ No resumable sessions found\\.\n\nSessions need at least one Claude response to be resumable\\.\nUse `/project <name>` to start a new session\\.');
+    await replyMd(ctx, 'ℹ️ No resumable sessions found\\.\n\nSessions need at least one response to be resumable\\.\nUse `/project <name>` to start a new session\\.');
     return;
   }
 
@@ -1659,7 +1491,7 @@ export async function handleLoop(ctx: Context): Promise<void> {
 
   if (!task) {
     await ctx.reply(
-      `🔄 *Loop Mode*\n\n_Project: ${esc(path.basename(session.workingDirectory))}_\n\nClaude will work iteratively until done \\(max ${config.MAX_LOOP_ITERATIONS} iterations\\)\\.\n\n👇 _Describe the task:_`,
+      `🔄 *Loop Mode*\n\n_Project: ${esc(path.basename(session.workingDirectory))}_\n\nCursor will work iteratively until done \\(max ${config.MAX_LOOP_ITERATIONS} iterations\\)\\.\n\n👇 _Describe the task:_`,
       {
         parse_mode: 'MarkdownV2',
         reply_markup: {
@@ -1731,49 +1563,6 @@ export async function handleSessions(ctx: Context): Promise<void> {
   }
 
   message += '\n_Use `/resume` to switch sessions or `/continue` to resume the last one\\._';
-
-  await replyMd(ctx, message);
-}
-
-export async function handleTeleport(ctx: Context): Promise<void> {
-  const keyInfo = getSessionKeyFromCtx(ctx);
-  if (!keyInfo) return;
-  const { sessionKey } = keyInfo;
-  const { chatId } = parseSessionKey(sessionKey);
-
-  if (getActiveProviderName(chatId) === 'opencode') {
-    await replyMd(ctx, 'ℹ️ `/teleport` is not available for the OpenCode provider\\.');
-    return;
-  }
-
-  const session = sessionManager.getSession(sessionKey);
-
-  if (!session) {
-    await replyMd(ctx, 'ℹ️ No active session to teleport\\.\n\nStart a conversation first with `/project <name>`\\.');
-    return;
-  }
-
-  if (!session.claudeSessionId) {
-    await replyMd(ctx, 'ℹ️ No Claude session available yet\\.\n\nSend a message first to start a session, then use `/teleport`\\.');
-    return;
-  }
-
-  const projectName = path.basename(session.workingDirectory);
-  const claudeBin = config.CLAUDE_EXECUTABLE_PATH ?? 'claude';
-  const command = `cd "${session.workingDirectory}" && ${claudeBin} --resume ${session.claudeSessionId}`;
-
-  const message = `🚀 *Teleport to Terminal*
-
-*Project:* \`${esc(projectName)}\`
-*Session:* \`${esc(session.claudeSessionId.substring(0, 8))}\\.\\.\\.\`
-
-Copy and run in your terminal:
-
-\`\`\`
-${esc(command)}
-\`\`\`
-
-_Both Telegram and terminal can continue independently \\(forked session\\)\\._`;
 
   await replyMd(ctx, message);
 }

@@ -5,7 +5,7 @@ import { preventSleep, allowSleep } from './utils/caffeinate.js';
 import { stopCleanup } from './telegram/deduplication.js';
 
 async function main() {
-  console.log('🤖 Starting Claudegram...');
+  console.log('🤖 Starting Cursogram...');
   console.log(`📋 Allowed users: ${config.ALLOWED_USER_IDS.join(', ')}`);
   console.log(`📝 Mode: ${config.STREAMING_MODE}`);
 
