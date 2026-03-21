@@ -223,6 +223,14 @@ Dokploy Tool:
 You have access to a dokploy-mcp MCP server for managing Dokploy resources and deployments.
 Use it when the user asks about Dokploy management tasks (projects, services, deployments, domains, monitoring) — no need to tell them to use a command.`;
 
+const GITHUB_TOOL_PROMPT = `
+
+GitHub — dedicated org account:
+- gh: Authenticated via GH_TOKEN. Use gh repo clone, gh pr create, gh issue list, etc.
+- git: Commit and push via git. For auth when pushing, use remote: https://$GITHUB_TOKEN@github.com/org/repo.git (or $GH_TOKEN) so the token from env is used.
+- GitHub MCP: Tools for create_file, create_pull_request, search_repositories, etc. Use them when creating PRs or managing repos.
+- Order: For complex tasks (e.g. create PR) — MCP first, then gh, then git when needed.`;
+
 const REASONING_SUMMARY_INSTRUCTIONS = `
 
 Reasoning Summary (required when enabled):
@@ -237,6 +245,7 @@ const TOOL_PROMPTS = [
   config.MEDIUM_ENABLED ? MEDIUM_TOOL_PROMPT : '',
   config.EXTRACT_ENABLED ? EXTRACT_TOOL_PROMPT : '',
   config.DOKPLOY_MCP_ENABLED && config.DOKPLOY_URL && config.DOKPLOY_API_KEY ? DOKPLOY_TOOL_PROMPT : '',
+  config.GITHUB_MCP_ENABLED && (config.GITHUB_TOKEN || process.env.GH_TOKEN) ? GITHUB_TOOL_PROMPT : '',
 ].join('');
 
 const SYSTEM_PROMPT = `${BASE_SYSTEM_PROMPT}${TOOL_PROMPTS}${config.CLAUDE_REASONING_SUMMARY ? REASONING_SUMMARY_INSTRUCTIONS : ''}`;
@@ -473,6 +482,21 @@ export async function sendToAgent(
           HOME: process.env.HOME || '',
           DOKPLOY_URL: config.DOKPLOY_URL,
           DOKPLOY_API_KEY: config.DOKPLOY_API_KEY,
+        },
+      } as McpServerConfig;
+    }
+
+    // Register GitHub MCP server (stdio via npx) when enabled
+    const githubToken = config.GITHUB_TOKEN || process.env.GITHUB_TOKEN || process.env.GH_TOKEN;
+    if (config.GITHUB_MCP_ENABLED && githubToken) {
+      mcpServers['github'] = {
+        type: 'stdio',
+        command: 'npx',
+        args: ['-y', '@modelcontextprotocol/server-github'],
+        env: {
+          PATH: process.env.PATH || '',
+          HOME: process.env.HOME || '',
+          GITHUB_TOKEN: githubToken,
         },
       } as McpServerConfig;
     }

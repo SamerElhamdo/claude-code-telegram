@@ -221,6 +221,9 @@ const envSchema = z.object({
   DOKPLOY_MCP_ENABLED: z.string().default('false').transform(toBool),
   DOKPLOY_URL: z.string().optional(),
   DOKPLOY_API_KEY: z.string().optional(),
+  // GitHub (gh + MCP) - dedicated org account
+  GITHUB_MCP_ENABLED: z.string().default('false').transform(toBool),
+  GITHUB_TOKEN: z.string().optional(),
 }).superRefine((data, ctx) => {
   if (data.DOKPLOY_MCP_ENABLED) {
     if (!data.DOKPLOY_URL) {
@@ -235,6 +238,16 @@ const envSchema = z.object({
         code: z.ZodIssueCode.custom,
         message: 'DOKPLOY_API_KEY is required when DOKPLOY_MCP_ENABLED=true',
         path: ['DOKPLOY_API_KEY'],
+      });
+    }
+  }
+  if (data.GITHUB_MCP_ENABLED) {
+    const token = data.GITHUB_TOKEN || process.env.GH_TOKEN;
+    if (!token) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'GITHUB_TOKEN or GH_TOKEN is required when GITHUB_MCP_ENABLED=true',
+        path: ['GITHUB_TOKEN'],
       });
     }
   }

@@ -44,7 +44,12 @@ services:
       - DOKPLOY_MCP_ENABLED=${DOKPLOY_MCP_ENABLED:-false}
       - DOKPLOY_URL=${DOKPLOY_URL:-}
       - DOKPLOY_API_KEY=${DOKPLOY_API_KEY:-}
-      # ── Node.js ────────────────────────────────────────
+
+      # ── GitHub (gh + MCP) - dedicated org account ───────
+      - GH_TOKEN=${GH_TOKEN:-}
+      - GITHUB_TOKEN=${GITHUB_TOKEN:-${GH_TOKEN:-}}
+      - GIT_TERMINAL_PROMPT=0
+      - GITHUB_MCP_ENABLED=${GITHUB_MCP_ENABLED:-false}
 
 
       
