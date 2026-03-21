@@ -8,9 +8,11 @@ RUN apk add --no-cache \
     python3 \
     py3-pip \
     ffmpeg \
+    su-exec \
     && apk add --no-cache --repository https://dl-cdn.alpinelinux.org/alpine/edge/community \
     github-cli \
-    && npm install -g @anthropic-ai/claude-code@latest
+    && npm install -g @anthropic-ai/claude-code@latest \
+    && chmod -R a+rx /usr/local/lib/node_modules/@anthropic-ai
 
 WORKDIR /app
 
@@ -26,21 +28,20 @@ RUN npm install
 # Build TypeScript
 RUN npm run build
 
-# Create workspace directory and fix permissions for non-root user
-RUN mkdir -p /workspace /data && \
-    chmod -R a+rX /usr/local/lib/node_modules && \
-    chmod a+x /usr/local/bin/node /usr/local/bin/claude 2>/dev/null || true && \
-    chown -R node:node /app /workspace /data
+# Create workspace directory
+RUN mkdir -p /workspace /data
+
+# Copy and configure entrypoint
+COPY claudegram-main/entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
 
 # Configure Claude Code
 ENV CLAUDE_USE_BUNDLED_EXECUTABLE=true
 ENV NODE_ENV=production
 
-# Switch to non-root user (required for --dangerously-skip-permissions)
-USER node
-
 # Healthcheck
 HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
     CMD node -e "console.log('ok')" || exit 1
 
+ENTRYPOINT ["/entrypoint.sh"]
 CMD ["npm", "start"]
