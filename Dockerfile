@@ -26,8 +26,10 @@ RUN npm install
 # Build TypeScript
 RUN npm run build
 
-# Create workspace directory and set ownership
+# Create workspace directory and fix permissions for non-root user
 RUN mkdir -p /workspace /data && \
+    chmod -R a+rX /usr/local/lib/node_modules && \
+    chmod a+x /usr/local/bin/node /usr/local/bin/claude 2>/dev/null || true && \
     chown -R node:node /app /workspace /data
 
 # Configure Claude Code
